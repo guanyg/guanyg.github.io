@@ -1,0 +1,275 @@
+<!DOCTYPE html><html class="has-navbar-fixed-top"><head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css">
+  
+  <title>EVRQ Demo</title>
+  <script defer="" src="https://unpkg.com/smoothscroll-polyfill@0.4.4/dist/smoothscroll.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js"></script>
+  <script defer="" src="https://use.fontawesome.com/releases/v5.15.4/js/all.js"></script>
+
+  <script>
+    function enable_draw(id, query_range) {
+      setTimeout(() => { enable_draw_inner(id, query_range) }, 0.1);
+    }
+    function enable_draw_inner(id, query_range) {
+      const svg = document.querySelector('#' + id);
+      const svgPoint = (elem, x, y) => {
+        const p = svg.createSVGPoint();
+        p.x = x;
+        p.y = y;
+        return p.matrixTransform(elem.getScreenCTM().inverse());
+      };
+
+      svg.addEventListener('mousedown', (event) => {
+        let prev = document.querySelectorAll(".query_rect");
+        if (prev) {
+          prev.forEach((e) => e.remove());
+        }
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        const start = svgPoint(svg, event.clientX, event.clientY);
+        const drawRect = (e) => {
+          const p = svgPoint(svg, e.clientX, e.clientY);
+          const w = Math.abs(p.x - start.x);
+          const h = Math.abs(p.y - start.y);
+          if (p.x > start.x) {
+            p.x = start.x;
+          }
+
+          if (p.y > start.y) {
+            p.y = start.y;
+          }
+
+          rect.setAttributeNS(null, 'class', 'query_rect');
+          rect.setAttributeNS(null, 'x', p.x);
+          rect.setAttributeNS(null, 'y', p.y);
+          rect.setAttributeNS(null, 'width', w);
+          rect.setAttributeNS(null, 'height', h);
+          rect.setAttributeNS(null, 'stroke', 'green');
+          rect.setAttributeNS(null, 'stroke-width', '3');
+          svg.appendChild(rect);
+        };
+
+        const endDraw = (e) => {
+          svg.removeEventListener('mousemove', drawRect);
+          svg.removeEventListener('mouseup', endDraw);
+
+          let prev = document.querySelector(".query_rect");
+          // console.log(prev);
+
+          let x = parseInt(prev.attributes['x'].value);
+          let y = parseInt(prev.attributes['y'].value);
+          let width = parseInt(prev.attributes['width'].value);
+          let height = parseInt(prev.attributes['height'].value);
+
+          query_range.set_aabb(x, y, x + width, y + height);
+        };
+
+        svg.addEventListener('mousemove', drawRect);
+        svg.addEventListener('mouseup', endDraw);
+      });
+    }
+  </script>
+  <script>
+    var d3svg = {};
+    function plot_tree(data, id) {
+      let treeData = [parse_node(data, "null")];
+
+      // ************** Generate the tree diagram	 *****************
+      var margin = { top: 30, right: 0, bottom: 0, left: 10 },
+        width = 400 - margin.right - margin.left,
+        height = 375 - margin.top - margin.bottom;
+
+      var i = 0;
+
+      var tree = d3.layout.tree()
+        .size([height, width]);
+
+      var diagonal = d3.svg.diagonal()
+        .projection(function (d) { return [d.x, d.y]; });
+
+      let svg;
+      if (id in d3svg) {
+        svg = d3svg[id];
+        svg.selectAll("*").remove();
+      } else {
+        svg = d3.select("#" + id).append("svg")
+          .attr("width", width + margin.right + margin.left)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+        d3svg[id] = svg;
+      }
+
+      root = treeData[0];
+
+      function toggle_temper(id) {
+        id = '#tree-container-verify_' + id;
+        let container = document.querySelector("#tree-container-verify");
+        function build_ancestors(arr) {
+          let ret = [];
+          while (arr.length > 1) {
+            ret.push(arr.join('_'));
+            arr.pop();
+          }
+          return ret;
+        }
+        let prev_tempered = new Set(Array.from(container.querySelectorAll('.tempered')).map((x) => x.id));
+
+        container.querySelector(id).classList.toggle('tempered-leaf');
+        let current = new Set(Array.from(container.querySelectorAll(".tempered-leaf"))
+          .map(d => { return build_ancestors(d.id.split('_')) })
+          .reduce((l, r) => new Set([...l, ...r]), []));
+
+        [...current].filter((x) => !prev_tempered.has(x)).forEach((x) => container.querySelector('#' + x).classList.toggle("tempered"));
+        [...prev_tempered].filter((x) => !current.has(x)).forEach((x) => container.querySelector('#' + x).classList.toggle("tempered"));
+      }
+
+      function update(source) {
+        // Compute the new tree layout.
+        var nodes = tree.nodes(root).reverse(),
+          links = tree.links(nodes);
+
+        // Normalize for fixed-depth.
+        nodes.forEach(function (d) { d.y = d.depth * 100; });
+
+        // Declare the nodes…
+        var node = svg.selectAll("g.node")
+          .data(nodes, function (d) { return d.id || (d.id = ++i); });
+
+        // Enter the nodes.
+        var nodeEnter = node.enter().append("g")
+          .attr("class", "node")
+          .attr("transform", function (d) {
+            return "translate(" + d.x + "," + d.y + ")";
+          })
+          .attr("id", function (d) {
+            return id + "_" + d.name;
+          });
+
+        nodeEnter.append("circle")
+          .attr("r", 10);
+
+        nodeEnter.append("text")
+          .attr("y", function (d) {
+            return d.children || d._children ? -18 : 18;
+          })
+          .attr("dy", ".35em")
+          .attr("text-anchor", "middle")
+          .text(function (d) { return d.name.split("_").pop(); })
+          .style("fill-opacity", 1);
+
+        // Declare the links…
+        var link = svg.selectAll("path.link")
+          .data(links, function (d) { return d.target.id; });
+
+        // Enter the links.
+        link.enter().insert("path", "g")
+          .attr("class", "link")
+          .attr("d", diagonal);
+
+        svg.selectAll("g.node")
+          .on('mouseenter', function (d, i) {
+            data.set_highlight(d.name, true);
+          })
+          .on('mouseleave', function (d, i) {
+            data.set_highlight(d.name, false);
+          });
+
+        if (id == 'tree-container-verify') {
+          svg.selectAll("g.node").style("cursor", function (d) {
+            if (d.children) {
+              return "auto";
+            }
+            return "pointer";
+          });
+          svg.selectAll("g.node").on("click", function (d) {
+            if (d.children) {
+              return;
+            }
+            toggle_temper(d.name);
+          });
+        }
+      }
+
+      update(root);
+    }
+    function parse_node(data, parent) {
+      let children = [];
+      for (let i = 0; i < data.num_children; i++) {
+        let child = parse_node(data.child(i), data.label);
+        if (child == null)
+          continue;
+        children.push(child);
+      }
+      let ret = {
+        name: data.label,
+        parent: parent,
+        children: children
+      };
+      return ret;
+    }
+  </script>
+  <style>
+    html {
+      scroll-behavior: smooth;
+    }
+
+    .node circle {
+      fill: #fff;
+      stroke: steelblue;
+      stroke-width: 3px;
+    }
+
+    .node text {
+      font: 12px sans-serif;
+    }
+
+    .link {
+      fill: none;
+      stroke: #ccc;
+      stroke-width: 2px;
+    }
+
+    img.next-btn {
+      width: 8vh;
+      margin: 0 auto;
+    }
+
+    #query_canvas {
+      cursor: cell;
+    }
+
+    #tree-container-query .node:not(.pruned, .visited) text,
+    #tree-container-verify .node:not(.pruned, .visited) text {
+      display: none;
+    }
+
+    #tree-container-verify .node.tempered circle {
+      fill: #ffe889;
+    }
+
+
+    #tree-container-verify circle.temperred {
+      fill: #cc8888 !important;
+    }
+
+    #tree-container-query circle,
+    #tree-container-verify circle {
+      stroke: #cccccc !important;
+    }
+
+    #tree-container-query .visited circle,
+    #tree-container-verify .visited circle {
+      stroke: #55cc55 !important;
+    }
+
+    #tree-container-query .pruned circle,
+    #tree-container-verify .pruned circle {
+      stroke: #cc5555 !important;
+    }
+  </style>
+
+<link rel="preload" href="/index-770adb86026b5db1_bg.wasm" as="fetch" type="application/wasm" crossorigin="">
+<link rel="modulepreload" href="/index-770adb86026b5db1.js"></head>
+
+<body><script type="module">import init from '/index-770adb86026b5db1.js';init('/index-770adb86026b5db1_bg.wasm');</script></body></html>
